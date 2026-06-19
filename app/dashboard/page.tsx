@@ -26,7 +26,13 @@ export default function StudentDashboardPage() {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <div className="xl:col-span-2 space-y-6">
                     <Card
-                        style={{ borderTop: "4px solid #A31D1D", marginBottom: '80px' }}
+                        style={{
+                            borderLeft: "1px solid #A31D1D4D",
+                            borderBottom: "1px solid #A31D1D4D",
+                            borderRight: "1px solid #A31D1D4D",
+                            borderTop: "4px solid #A31D1D",
+                            marginBottom: '80px',
+                        }}
                         className="rounded-xl shadow-sm"
                     >
                         <div className="flex justify-between items-start mb-4">
@@ -71,7 +77,10 @@ export default function StudentDashboardPage() {
                         </div>
                     </Card>
                     {/* Card Form */}
-                    <Card className="rounded-xl border border-gray-200 shadow-sm">
+                    <Card
+                        className="rounded-xl shadow-sm"
+                        style={{ border: "1px solid #A31D1D4D" }}
+                    >
                         <div className="flex justify-between items-center mb-6">
                             <div className="flex items-center gap-3">
                                 <div className="bg-red-50 p-2.5 rounded text-[#A31D1D]"><FileTextOutlined className="text-xl" /></div>
@@ -124,25 +133,50 @@ export default function StudentDashboardPage() {
                 {/* CỘT PHẢI */}
                 <div className="space-y-6">
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex flex-col items-center justify-center">
-                            <span className="text-[10px] font-bold text-gray-400 mb-1 tracking-wider">ĐIỂM GVHD</span>
-                            <span className="text-2xl font-black text-[#A31D1D]">8.5</span>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex flex-col items-center justify-center">
-                            <span className="text-[10px] font-bold text-[#A31D1D] mb-1 tracking-wider">THỜI HẠN CÒN</span>
-                            <span className="text-2xl font-black text-[#A31D1D]">5 ngày</span>
-                        </div>
-                        <div className="col-span-2 bg-[#F6F4EB] p-4 rounded-xl border border-[#E8E1CD] flex justify-between items-center">
-                            <div>
-                                <span className="text-[10px] font-bold text-gray-500 mb-1 tracking-wider block">THÀNH TÍCH HIỆN TẠI</span>
-                                <span className="text-sm font-bold text-[#6B5A30]">Top 5% sinh viên tiêu biểu</span>
+                    <div className="flex flex-col gap-4 border border-[#A31D1D]/30 p-6">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-gray-200 border border-gray-100 shadow-sm  p-4 flex flex-col items-center justify-center transition-all hover:shadow-md">
+                                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                    Điểm GVHD
+                                </span>
+                                <span className="text-3xl font-black text-[#A31D1D]">
+                                    8.5
+                                </span>
                             </div>
-                            <TrophyOutlined className="text-xl text-[#A3863C]" />
+
+                            {/* Element 2: Thời hạn còn */}
+                            <div className="bg-[#FFF5F5] border border-red-100 shadow-sm p-4 flex flex-col items-center justify-center transition-all hover:shadow-md">
+                                <span className="text-xs font-bold text-[#A31D1D] uppercase tracking-wider mb-1">
+                                    Thời hạn còn
+                                </span>
+                                <span className="text-3xl font-black text-[#A31D1D]">
+                                    5 ngày
+                                </span>
+                            </div>
+
                         </div>
+
+                        {/* HÀNG DƯỚI: Chiếm full chiều ngang */}
+                        {/* Element 3: Thành tích hiện tại */}
+                        <div className="bg-[#FAFAED] border border-[#E6DBB3] shadow-sm p-4 flex justify-between items-center transition-all hover:shadow-md">
+                            <div>
+                                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    Thành tích hiện tại
+                                </div>
+                                <div className="text-base font-bold text-[#8A6D3B]">
+                                    Top 5% sinh viên tiêu biểu
+                                </div>
+                            </div>
+                            {/* Icon cúp vàng */}
+                            <TrophyOutlined className="text-2xl text-[#8A6D3B]" />
+                        </div>
+
                     </div>
 
-                    <Card className="rounded-xl border border-[#A31D1D] shadow-sm">
+                    <Card
+                        className="shadow-sm "
+                        style={{ border: "1px solid #A31D1D", borderLeft: "4px solid #A31D1D", marginBottom: "35px" }}
+                    >
                         <div className="flex items-center gap-2 mb-3 text-[#A31D1D] font-bold text-xs tracking-wider uppercase">
                             <MessageOutlined /> Nhận xét mới nhất
                         </div>
@@ -155,7 +189,11 @@ export default function StudentDashboardPage() {
                         </div>
                     </Card>
 
-                    <Card className="rounded-xl border border-gray-200 shadow-sm">
+                    <Card
+                        className="rounded-xl shadow-sm min-h-[550px]"
+                        styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
+                        style={{ border: "1px solid #A31D1D4D" }}
+                    >
                         <h3 className="text-[10px] font-bold text-gray-500 tracking-wider uppercase mb-5">Thời hạn sắp tới</h3>
 
                         <div className="space-y-4">
@@ -184,9 +222,11 @@ export default function StudentDashboardPage() {
                             </div>
                         </div>
                         <Divider className="my-4" />
-                        <Button className="w-full text-[#A31D1D] font-bold text-xs border border-[#A31D1D] hover:bg-red-50 rounded">
-                            Xem tất cả lịch hẹn
-                        </Button>
+                        <div className="mt-auto pt-6 border-t border-gray-100">
+                            <Button className="w-full text-[#A31D1D] font-bold text-xs border border-[#A31D1D] hover:bg-red-50 rounded">
+                                Xem tất cả lịch hẹn
+                            </Button>
+                        </div>
                     </Card>
                 </div>
             </div>

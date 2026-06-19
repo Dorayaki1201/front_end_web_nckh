@@ -32,7 +32,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Sider
                     width={55}
                     theme="light"
-                    className="border-r border-gray-200 sticky top-0 h-screen z-50 shadow-sm"
+                    className="sticky top-0 h-screen z-50"
+                    style={{ borderRight: 0 }}
                 >
                     <div className="flex flex-col h-full items-center py-6">
                         <div className="mb-10 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => router.push('/')}>
@@ -40,7 +41,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         </div>
                         <div className="flex flex-col gap-3 w-full items-center flex-1">
                             {menuItems.map((item) => {
-                                const isActive = pathname === item.key || (pathname.startsWith(item.key) && item.key !== '/');
+                                const isActive = item.key === '/dashboard'
+                                    ? pathname === '/dashboard'
+                                    : (pathname.startsWith(item.key) && item.key !== '/');
                                 return (
                                     <div
                                         key={item.key}
@@ -77,13 +80,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Sider>
                 <Layout>
                     <header
-                        className="border-b border-gray-200 h-16 flex items-center justify-between sticky top-0 z-40"
+                        className="h-16 flex items-center justify-between sticky top-0 z-40"
                         style={{ backgroundColor: '#ffffff', padding: '0 24px' }}
                     >
                         <div className="flex items-center gap-2 font-bold text-sm shrink-0">
-                            <span className="text-[#A31D1D] tracking-wide">WORKSPACE</span>
-                            <span className="text-gray-300">/</span>
-                            <span className="text-gray-600">Sinh viên</span>
+                            <span className="text-[#A31D1D] tracking-wide text-2xl font-extrabold">WORKSPACE</span>
+                            <span className="text-red-400 text-1xl font-extralight">/</span>
+                            <span className="text-red-800 text-1xl">Sinh viên</span>
                         </div>
                         <div className="flex-1 max-w-xl mx-8 hidden md:block">
                             <Input
@@ -106,7 +109,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             </div>
                         </div>
                     </header>
-                    <Content className="p-6 md:p-8 min-h-screen">
+                    <Content className="p-6 md:p-8 min-h-screen border-l border-t border-[#A31D1D]/30">
                         {children}
                     </Content>
                 </Layout>
