@@ -1,5 +1,4 @@
 'use client';
-
 import React from 'react';
 import { Layout, Input, Avatar, Badge, ConfigProvider } from 'antd';
 import {
@@ -11,7 +10,12 @@ import {
     SettingOutlined,
     LogoutOutlined,
     SearchOutlined,
-    BellOutlined
+    BellOutlined,
+    TeamOutlined, // Icon cho quản lý nhóm của Thầy
+    LineChartOutlined, // Icon cho thống kê của Thầy
+    CheckSquareOutlined,
+    FileTextOutlined,
+    KeyOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 
@@ -19,13 +23,36 @@ const { Header, Sider, Content } = Layout;
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
-    const menuItems = [
+    const isTeacher = pathname.includes('/teacher_dashboard');
+    const isManager = pathname.includes('/manager_dashboard');
+    const studentMenu = [
         { icon: <HomeOutlined />, key: '/' },
-        { icon: <AppstoreOutlined />, key: '/dashboard' },
-        { icon: <FolderOutlined />, key: '/dashboard/projects' },
-        { icon: <BookOutlined />, key: '/dashboard/library' },
-        { icon: <UserOutlined />, key: '/dashboard/profile' },
+        { icon: <AppstoreOutlined />, key: '/student_dashboard' },
+        { icon: <FolderOutlined />, key: '/student_dashboard/projects' },
+        { icon: <BookOutlined />, key: '/student_dashboard/library' },
+        { icon: <UserOutlined />, key: '/student_dashboard/profile' },
     ];
+
+    const teacherMenu = [
+        { icon: <HomeOutlined />, key: '/' },
+        { icon: <AppstoreOutlined />, key: '/teacher_dashboard' },
+        { icon: <TeamOutlined />, key: '/teacher_dashboard/groups' },
+        { icon: <LineChartOutlined />, key: '/teacher_dashboard/stats' },
+        { icon: <CheckSquareOutlined />, key: '/teacher_dashboard/approvals' },
+        { icon: <UserOutlined />, key: '/teacher_dashboard/profile' },
+    ];
+
+    const managerMenu = [
+        { icon: <HomeOutlined />, key: '/' },
+        { icon: <AppstoreOutlined />, key: '/manager_dashboard' },
+        { icon: <FileTextOutlined />, key: '/manager_dashboard/documents' },
+        { icon: <TeamOutlined />, key: '/manager_dashboard/users' },
+        { icon: <KeyOutlined />, key: '/manager_dashboard/system' },
+        { icon: <UserOutlined />, key: '/manager_dashboard/profile' },
+    ];
+
+    const currentMenu = isManager ? managerMenu : (isTeacher ? teacherMenu : studentMenu);
+
     return (
         <ConfigProvider theme={{ token: { colorPrimary: '#A31D1D', fontFamily: 'inherit' } }}>
             <Layout className="min-h-screen bg-[#F8F9FA]">
@@ -40,10 +67,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             <img src="/logo-kma.png" alt="Logo" className="w-10 h-10 object-contain" />
                         </div>
                         <div className="flex flex-col gap-3 w-full items-center flex-1">
-                            {menuItems.map((item) => {
-                                const isActive = item.key === '/dashboard'
-                                    ? pathname === '/dashboard'
-                                    : (pathname.startsWith(item.key) && item.key !== '/');
+                            {currentMenu.map((item) => {
+                                const exactMatchRoutes = ['/', '/student_dashboard', '/teacher_dashboard', '/manager_dashboard'];
+                                const isActive = exactMatchRoutes.includes(item.key)
+                                    ? pathname === item.key : pathname.startsWith(item.key);
                                 return (
                                     <div
                                         key={item.key}
@@ -86,7 +113,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <div className="flex items-center gap-2 font-bold text-sm shrink-0">
                             <span className="text-[#A31D1D] tracking-wide text-2xl font-extrabold">WORKSPACE</span>
                             <span className="text-red-400 text-1xl font-extralight">/</span>
-                            <span className="text-red-800 text-1xl">Sinh viên</span>
+                            <span className="text-red-800 text-1xl">
+                                {isManager ? 'Cán bộ quản lý' : (isTeacher ? 'Giảng viên hướng dẫn' : 'Sinh viên')}
+                            </span>
                         </div>
                         <div className="flex-1 max-w-xl mx-8 hidden md:block">
                             <Input
@@ -102,10 +131,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             <div className="h-6 w-[1px] bg-gray-200"></div>
                             <div className="flex items-center gap-3 cursor-pointer group">
                                 <div className="text-right hidden sm:block whitespace-nowrap">
-                                    <div className="text-sm font-bold text-gray-800 leading-tight group-hover:text-[#A31D1D] transition-colors">SV. Nguyễn Văn Nam</div>
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-wide">AT160243 • Cơ sở HN</div>
+                                    <div className="text-sm font-bold text-gray-800 leading-tight group-hover:text-[#A31D1D] transition-colors">
+                                        {isManager ? 'CB. Trần Thị B' : (isTeacher ? 'ThS. Lê Văn A' : 'SV. Nguyễn Văn Nam')}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wide">
+                                        {isManager ? 'PHÒNG KH-CN' : (isTeacher ? 'Khoa CNTT' : 'AT160243 • Cơ sở HN')}
+                                    </div>
                                 </div>
-                                <Avatar src="https://i.pravatar.cc/150?img=11" className="border border-gray-200" />
+                                <Avatar
+                                    src={isTeacher ? "https://i.pravatar.cc/150?img=8" : "https://i.pravatar.cc/150?img=11"}
+                                    className="border border-gray-200"
+                                />
                             </div>
                         </div>
                     </header>
