@@ -1,6 +1,6 @@
 'use client';
-import React from 'react';
-import { Layout, Input, Avatar, Badge, ConfigProvider } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Layout, Input, Avatar, Badge, ConfigProvider, Skeleton } from 'antd';
 import {
     HomeOutlined,
     AppstoreOutlined,
@@ -11,8 +11,8 @@ import {
     LogoutOutlined,
     SearchOutlined,
     BellOutlined,
-    TeamOutlined, // Icon cho quản lý nhóm của Thầy
-    LineChartOutlined, // Icon cho thống kê của Thầy
+    TeamOutlined,
+    LineChartOutlined,
     CheckSquareOutlined,
     FileTextOutlined,
     KeyOutlined,
@@ -20,11 +20,34 @@ import {
 import { usePathname, useRouter } from 'next/navigation';
 
 const { Header, Sider, Content } = Layout;
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
-    const isTeacher = pathname.includes('/teacher_dashboard');
-    const isManager = pathname.includes('/manager_dashboard');
+    const [user, setUser] = useState<any>(null);
+    const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+    // useEffect(() => {
+    //     const checkAuth = () => {
+    //         const token = localStorage.getItem('accessToken');
+    //         const storedUser = localStorage.getItem('currentUser');
+    //         if (!token || !storedUser) {
+    //             localStorage.removeItem('accessToken');
+    //             localStorage.removeItem('refreshToken');
+    //             localStorage.removeItem('currentUser');
+    //             router.push('/login');
+    //         } else {
+    //             setUser(JSON.parse(storedUser));
+    //             setIsCheckingAuth(false);
+    //         }
+    //     };
+    //     checkAuth();
+    // }, [pathname, router]);
+    const handleLogout = () => {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('currentUser');
+        router.push('/login');
+    };
     const studentMenu = [
         { icon: <HomeOutlined />, key: '/' },
         { icon: <AppstoreOutlined />, key: '/student_dashboard' },
@@ -32,7 +55,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { icon: <BookOutlined />, key: '/student_dashboard/library' },
         { icon: <UserOutlined />, key: '/student_dashboard/profile' },
     ];
-
     const teacherMenu = [
         { icon: <HomeOutlined />, key: '/' },
         { icon: <AppstoreOutlined />, key: '/teacher_dashboard' },
@@ -41,7 +63,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { icon: <CheckSquareOutlined />, key: '/teacher_dashboard/approvals' },
         { icon: <UserOutlined />, key: '/teacher_dashboard/profile' },
     ];
-
     const managerMenu = [
         { icon: <HomeOutlined />, key: '/' },
         { icon: <AppstoreOutlined />, key: '/manager_dashboard' },
@@ -51,7 +72,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { icon: <UserOutlined />, key: '/manager_dashboard/profile' },
     ];
 
-    const currentMenu = isManager ? managerMenu : (isTeacher ? teacherMenu : studentMenu);
+    const role = user?.QuyenHan;
+    const currentMenu = role === 'QUANLY' ? managerMenu : (role === 'GIANGVIEN' ? teacherMenu : studentMenu);
+
+    // if (isCheckingAuth) {
+    //     return (
+    //         <div className="min-h-screen flex bg-[#F8F9FA]">
+    //             <div className="w-[55px] border-r border-gray-200 bg-white p-4">
+    //                 <Skeleton.Avatar active size="small" shape="circle" className="mb-8" />
+    //                 <Skeleton.Button active size="small" block className="mb-4" />
+    //                 <Skeleton.Button active size="small" block className="mb-4" />
+    //             </div>
+    //             <div className="flex-1 p-8">
+    //                 <Skeleton active paragraph={{ rows: 6 }} />
+    //             </div>
+    //         </div>
+    //     );
+    // }
 
     return (
         <ConfigProvider theme={{ token: { colorPrimary: '#A31D1D', fontFamily: 'inherit' } }}>
@@ -98,7 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             </div>
                             <div
                                 className="w-11 h-11 flex justify-center items-center rounded-xl hover:bg-red-50 hover:text-red-600 cursor-pointer transition-all"
-                                onClick={() => router.push('/login')}
+                                onClick={handleLogout}
                             >
                                 <LogoutOutlined />
                             </div>
@@ -107,14 +144,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Sider>
                 <Layout>
                     <header
-                        className="h-16 flex items-center justify-between sticky top-0 z-40"
+                        className="h-16 flex items-center justify-between sticky top-0 z-40 shadow-sm border-b border-gray-100"
                         style={{ backgroundColor: '#ffffff', padding: '0 24px' }}
                     >
                         <div className="flex items-center gap-2 font-bold text-sm shrink-0">
                             <span className="text-[#A31D1D] tracking-wide text-2xl font-extrabold">WORKSPACE</span>
                             <span className="text-red-400 text-1xl font-extralight">/</span>
-                            <span className="text-red-800 text-1xl">
-                                {isManager ? 'Cán bộ quản lý' : (isTeacher ? 'Giảng viên hướng dẫn' : 'Sinh viên')}
+                            <span className="text-red-800 text-1xl uppercase tracking-wide">
+                                {user?.QuyenHan_display || 'Thành viên'}
                             </span>
                         </div>
                         <div className="flex-1 max-w-xl mx-8 hidden md:block">
@@ -129,18 +166,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 <BellOutlined className="text-[20px] text-gray-600 cursor-pointer hover:text-[#A31D1D] transition-colors" />
                             </Badge>
                             <div className="h-6 w-[1px] bg-gray-200"></div>
+
                             <div className="flex items-center gap-3 cursor-pointer group">
                                 <div className="text-right hidden sm:block whitespace-nowrap">
                                     <div className="text-sm font-bold text-gray-800 leading-tight group-hover:text-[#A31D1D] transition-colors">
-                                        {isManager ? 'CB. Trần Thị B' : (isTeacher ? 'ThS. Lê Văn A' : 'SV. Nguyễn Văn Nam')}
+                                        {user?.TenHienThi || 'Đang tải...'}
                                     </div>
                                     <div className="text-[10px] text-gray-500 uppercase tracking-wide">
-                                        {isManager ? 'PHÒNG KH-CN' : (isTeacher ? 'Khoa CNTT' : 'AT160243 • Cơ sở HN')}
+                                        {user?.MaDinhDanh || 'ACTVN Member'}
                                     </div>
                                 </div>
                                 <Avatar
-                                    src={isTeacher ? "https://i.pravatar.cc/150?img=8" : "https://i.pravatar.cc/150?img=11"}
-                                    className="border border-gray-200"
+                                    src={role === 'GIANGVIEN' ? "https://i.pravatar.cc/150?img=8" : role === 'QUANLY' ? "https://i.pravatar.cc/150?img=1" : "https://i.pravatar.cc/150?img=11"}
+                                    className="border border-gray-200 group-hover:border-[#A31D1D] transition-colors"
                                 />
                             </div>
                         </div>

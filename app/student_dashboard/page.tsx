@@ -1,235 +1,489 @@
 'use client';
 
-import React from 'react';
-import { Card, Button, Input, Upload, Tag, Divider } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Card, Button, Input, Upload, Tag, Divider, Skeleton, Modal, InputNumber, message, Form, Select, Avatar, ConfigProvider } from 'antd';
+import { UploadOutlined, FormOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import {
     UserOutlined, CalendarOutlined, InboxOutlined, MessageOutlined,
-    TrophyOutlined, FileTextOutlined, CheckOutlined, SyncOutlined, LockOutlined,
-    RobotOutlined, FormOutlined, CloseOutlined
+    FileTextOutlined, CheckOutlined, SyncOutlined, LockOutlined,
+    RobotOutlined, CloseOutlined, SaveOutlined
 } from '@ant-design/icons';
+import { sendRequest } from '@/utils/api';
 
 const { TextArea } = Input;
 const { Dragger } = Upload;
 
 export default function StudentDashboardPage() {
+    const [loading, setLoading] = useState(true);
+    const [userData, setUserData] = useState<any>(null);
+    const [project, setProject] = useState<any>(null);
+    const [progressList, setProgressList] = useState<any[]>([]);
+    const [progressPercent, setProgressPercent] = useState<number>(0);
+    const [messageApi, contextHolder] = message.useMessage();
+
+    const [isUploadModalVisible, setIsUploadModalVisible] = useState(false);
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [newProgress, setNewProgress] = useState<number>(0);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const [isRegisterModalVisible, setIsRegisterModalVisible] = useState(false);
+    const [isRegistering, setIsRegistering] = useState(false);
+    const [form] = Form.useForm();
+    const [rawStudents, setRawStudents] = useState<any[]>([]);
+    const [studentsOptions, setStudentsOptions] = useState<{ label: string; value: string }[]>([]);
+    const [teachersOptions, setTeachersOptions] = useState<{ label: string; value: string }[]>([]);
+    const [selectedTeam, setSelectedTeam] = useState<any[]>([]);
+
+    const fetchDashboardData = async () => {
+        try {
+            const [userRes, deTaiRes, tienDoRes, svRes, gvRes] = await Promise.all([
+                sendRequest<any>({ url: 'http://localhost:8000/api/me/', method: 'GET' }),
+                sendRequest<any>({ url: 'http://localhost:8000/api/de-tai/', method: 'GET' }),
+                sendRequest<any>({ url: 'http://localhost:8000/api/tien-do/', method: 'GET' }),
+                sendRequest<any>({ url: 'http://localhost:8000/api/sinh-vien/', method: 'GET' }),
+                sendRequest<any>({ url: 'http://localhost:8000/api/giang-vien/', method: 'GET' })
+            ]);
+
+            setUserData(userRes);
+            const myMaSV = userRes?.MaDinhDanh;
+
+            if (deTaiRes.results && deTaiRes.results.length > 0) {
+                setProject(deTaiRes.results[0]);
+            } else if (Array.isArray(deTaiRes) && deTaiRes.length > 0) {
+                setProject(deTaiRes[0]);
+            } else {
+                setProject(null);
+            }
+
+            if (tienDoRes.results && tienDoRes.results.length > 0) {
+                setProgressPercent(tienDoRes.results[0].TyLeHoanThanh);
+                setProgressList(tienDoRes.results);
+            } else if (Array.isArray(tienDoRes) && tienDoRes.length > 0) {
+                setProgressPercent(tienDoRes[0].TyLeHoanThanh);
+                setProgressList(tienDoRes);
+            }
+
+            const svData = svRes.results || svRes;
+            setRawStudents(svData);
+            const availableStudents = svData.filter((sv: any) => sv.MaSV !== myMaSV && !sv.MaDeTai);
+            setStudentsOptions(availableStudents.map((sv: any) => ({
+                label: `${sv.MaSV} - ${sv.TenSV} (${sv.Lop})`,
+                value: sv.MaSV
+            })));
+
+            const gvData = gvRes.results || gvRes;
+            setTeachersOptions(gvData.map((gv: any) => ({
+                label: `${gv.HocHamHocVi || ''} ${gv.TenGV} (${gv.MaGV})`.trim(),
+                value: gv.MaGV
+            })));
+
+        } catch (error) {
+            console.error("Lỗi tải dữ liệu Dashboard:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchDashboardData();
+    }, []);
+
+    const handleAddStudent = (maSV: string) => {
+        if (selectedTeam.length >= 4) {
+            message.warning("Một nhóm chỉ có tối đa 5 thành viên (gồm cả bạn)!");
+            return;
+        }
+        const studentObj = rawStudents.find(s => s.MaSV === maSV);
+        if (studentObj && !selectedTeam.some(s => s.MaSV === maSV)) {
+            const newTeam = [...selectedTeam, studentObj];
+            setSelectedTeam(newTeam);
+            form.setFieldsValue({ DanhSachThanhVien: newTeam.map(s => s.MaSV) });
+        }
+    };
+
+    const handleRemoveStudent = (maSV: string) => {
+        const newTeam = selectedTeam.filter(s => s.MaSV !== maSV);
+        setSelectedTeam(newTeam);
+        form.setFieldsValue({ DanhSachThanhVien: newTeam.map(s => s.MaSV) });
+    };
+
+    const handleRegisterSubmit = async (values: any) => {
+        setIsRegistering(true);
+        try {
+            const payload: any = {
+                MaDeTai: values.MaDeTai,
+                TenDeTai: values.TenDeTai,
+                TomTat: values.TomTat,
+                TrangThai: 'CHODUYET_KHOA'
+            };
+
+            if (selectedTeam.length > 0) {
+                payload.DanhSachThanhVien = selectedTeam.map(s => s.MaSV);
+            }
+            if (values.MaGV_HuongDan) {
+                payload.MaGV_HuongDan = values.MaGV_HuongDan;
+            }
+
+            await sendRequest({
+                url: 'http://localhost:8000/api/de-tai/',
+                method: 'POST',
+                body: payload
+            });
+
+            message.success("Đăng ký đề tài thành công! Hệ thống đang chờ duyệt.");
+            setIsRegisterModalVisible(false);
+            form.resetFields();
+            setSelectedTeam([]);
+            fetchDashboardData();
+        } catch (error: any) {
+            let errorMsg = "Có lỗi xảy ra khi lưu đề tài.";
+            const errData = error?.error || error;
+            if (errData) {
+                if (errData.MaDeTai) errorMsg = `Mã đề tài: ${errData.MaDeTai[0]}`;
+                else if (errData.TenDeTai) errorMsg = `Tên đề tài: ${errData.TenDeTai[0]}`;
+                else if (errData.detail) errorMsg = errData.detail;
+            }
+            message.error(errorMsg);
+        } finally {
+            setIsRegistering(false);
+        }
+    };
+
+    const handleUploadSubmit = async () => {
+        if (!uploadFile) return messageApi.error('Quên chọn file báo cáo rồi kìa!');
+        if (!project) return messageApi.error('Lỗi: Bạn chưa có đề tài.');
+
+        setIsSubmitting(true);
+        const formData = new FormData();
+        formData.append('MaDeTai', project.MaDeTai);
+        formData.append('TyLeHoanThanh', newProgress.toString());
+        formData.append('FileBaoCao', uploadFile);
+        formData.append('NoiDung', `Cập nhật tiến độ đạt ${newProgress}%`);
+
+        try {
+            const token = localStorage.getItem('accessToken');
+            const res = await fetch('http://localhost:8000/api/tien-do/', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+
+            if (!res.ok) throw new Error('Nộp báo cáo thất bại!');
+
+            messageApi.success('Tuyệt vời! Đã nộp báo cáo thành công!');
+            setIsUploadModalVisible(false);
+            setUploadFile(null);
+            fetchDashboardData();
+        } catch (error: any) {
+            messageApi.error('Có lỗi xảy ra khi nộp bài.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const getProgressBarWidth = () => {
+        if (!project) return 0;
+        if (project.TrangThai === 'CHODUYET') return 0;
+        if (project.TrangThai === 'DANGHIEMTHU') return 100;
+
+        if (progressPercent >= 50) {
+            return Math.max(66.67, progressPercent);
+        } else {
+            return Math.max(33.33, progressPercent);
+        }
+    };
+
+    if (loading) return <div className="p-8"><Skeleton active paragraph={{ rows: 12 }} /></div>;
+
     return (
-        <div className="max-w-[1400px] mx-auto">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div>
-                    <h1 className="text-2xl font-black text-gray-900 mb-1">Chào buổi sáng, Nam! 👋</h1>
-                    <p className="text-gray-500 text-sm">Bạn có một hạn nộp báo cáo trong 5 ngày tới. Hãy kiểm tra tiến độ nhé.</p>
-                </div>
-                <Button type="primary" className="bg-[#A31D1D] font-bold h-10 px-6 shadow-md rounded-md">
-                    + Nộp báo cáo định kỳ
-                </Button>
-            </div>
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                <div className="xl:col-span-2 space-y-6">
-                    <Card
-                        style={{
-                            borderLeft: "1px solid #A31D1D4D",
-                            borderBottom: "1px solid #A31D1D4D",
-                            borderRight: "1px solid #A31D1D4D",
-                            borderTop: "4px solid #A31D1D",
-                            marginBottom: '80px',
-                        }}
-                        className="rounded-xl shadow-sm"
-                    >
-                        <div className="flex justify-between items-start mb-4">
-                            <span className="text-xs font-bold text-red-700 tracking-widest uppercase">Đề tài hiện tại</span>
-                            <div className="bg-[#FEE2E2] text-[#A31D1D] font-bold px-3 py-1 rounded-full text-xs flex items-center">
-                                <SyncOutlined spin className="mr-1.5" /> ĐANG THỰC HIỆN
-                            </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4 leading-snug pr-10">
-                            Phân tích & thiết kế hệ thống quản lý NCKH sinh viên Học viện Kỹ thuật Mật mã
-                        </h2>
-
-                        <div className="flex gap-8 text-sm text-red-800 mb-12 font-medium">
-                            <span className="flex items-center gap-2"><UserOutlined className="text-[#A31D1D]" /> GVHD: TS. Lê Văn A</span>
-                            <span className="flex items-center gap-2"><CalendarOutlined className="text-[#A31D1D]" /> Bắt đầu: 15/01/2024</span>
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-end mb-12">
-                                <span className="text-sm font-bold text-gray-800">Tiến độ thực hiện</span>
-                                <span className="text-[#A31D1D] font-black text-lg">65%</span>
-                            </div>
-                            <div className="relative flex items-center justify-between w-full mt-2">
-                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-gray-200 z-0"></div>
-                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[65%] h-1 bg-[#A31D1D] z-0"></div>
-                                <div className="z-10 flex flex-col items-center">
-                                    <div className="w-6 h-6 bg-[#A31D1D] rounded flex items-center justify-center mb-2 shadow-sm"><CheckOutlined className="text-white text-xs font-bold" /></div>
-                                    <span className="text-[10px] font-semibold text-gray-600">Đăng ký</span>
-                                </div>
-                                <div className="z-10 flex flex-col items-center">
-                                    <div className="w-6 h-6 bg-[#A31D1D] rounded flex items-center justify-center mb-2 shadow-sm"><CheckOutlined className="text-white text-xs font-bold" /></div>
-                                    <span className="text-[10px] font-semibold text-gray-600">Duyệt đề cương</span>
-                                </div>
-                                <div className="z-10 flex flex-col items-center">
-                                    <div className="w-6 h-6 bg-white border-2 border-[#A31D1D] rounded flex items-center justify-center mb-2 shadow-sm"><SyncOutlined className="text-[#A31D1D] text-[10px] font-bold" /></div>
-                                    <span className="text-[10px] font-bold text-[#A31D1D]">Báo cáo giữa kỳ</span>
-                                </div>
-                                <div className="z-10 flex flex-col items-center">
-                                    <div className="w-6 h-6 bg-gray-100 border border-gray-200 rounded flex items-center justify-center mb-2"><LockOutlined className="text-gray-400 text-[10px]" /></div>
-                                    <span className="text-[10px] font-medium text-gray-400">Nghiệm thu</span>
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-                    {/* Card Form */}
-                    <Card
-                        className="rounded-xl shadow-sm"
-                        style={{ border: "1px solid #A31D1D4D" }}
-                    >
-                        <div className="flex justify-between items-center mb-6">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-red-50 p-2.5 rounded text-[#A31D1D]"><FileTextOutlined className="text-xl" /></div>
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-800">Nộp báo cáo tiến độ 50%</h3>
-                                    <p className="text-xs text-gray-500">Yêu cầu hoàn thành các nội dung theo đề cương đã duyệt</p>
-                                </div>
-                            </div>
-                            <div className="bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded text-xs">
-                                Hạn: 15/05/2024
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 mb-2">Tóm tắt nội dung báo cáo</label>
-                                <TextArea rows={4} placeholder="Nhập tóm tắt công việc đã thực hiện..." className="rounded-md" />
-                            </div>
-
-                            <Dragger className="bg-gray-50/50 border-dashed border border-gray-300 rounded-lg p-4">
-                                <p className="ant-upload-drag-icon text-[#A31D1D] mb-2"><InboxOutlined className="text-3xl" /></p>
-                                <p className="font-bold text-gray-800 text-sm">Kéo thả tệp hoặc click để chọn</p>
-                                <p className="text-[10px] text-gray-500 mt-1">Hỗ trợ PDF, ZIP, RAR (Tối đa 25MB)</p>
-                            </Dragger>
-
-                            {/* Tệp đính kèm viền đỏ nhạt */}
-                            <div className="flex items-center justify-between bg-white border border-red-200 px-4 py-2 rounded-md mt-2">
-                                <div className="flex items-center gap-2 text-[#A31D1D] font-semibold text-sm">
-                                    <FileTextOutlined /> bao_cao_50_final.pdf
-                                </div>
-                                <CloseOutlined className="text-[#A31D1D] hover:text-red-700 cursor-pointer text-xs" />
-                            </div>
-
-                            <Divider className="my-4" />
-
-                            <div className="flex justify-between items-center">
-                                {/* Nút màu kem vàng */}
-                                <Button className="bg-[#F6F4EB] text-[#7A6A42] border-[#E8E1CD] font-bold text-xs h-9 flex items-center gap-1 rounded">
-                                    <RobotOutlined /> AI Tóm tắt báo cáo
-                                </Button>
-                                <div className="flex gap-3">
-                                    <Button className="font-bold text-gray-600 border-gray-300 rounded h-9">Lưu bản nháp</Button>
-                                    <Button className="bg-[#A31D1D] text-white font-bold rounded h-9 px-8 border-none shadow-md">NỘP BÀI</Button>
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-                </div>
-
-                {/* CỘT PHẢI */}
-                <div className="space-y-6">
-
-                    <div className="flex flex-col gap-4 border border-[#A31D1D]/30 p-6">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-gray-200 border border-gray-100 shadow-sm  p-4 flex flex-col items-center justify-center transition-all hover:shadow-md">
-                                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                                    Điểm GVHD
-                                </span>
-                                <span className="text-3xl font-black text-[#A31D1D]">
-                                    8.5
-                                </span>
-                            </div>
-
-                            {/* Element 2: Thời hạn còn */}
-                            <div className="bg-[#FFF5F5] border border-red-100 shadow-sm p-4 flex flex-col items-center justify-center transition-all hover:shadow-md">
-                                <span className="text-xs font-bold text-[#A31D1D] uppercase tracking-wider mb-1">
-                                    Thời hạn còn
-                                </span>
-                                <span className="text-3xl font-black text-[#A31D1D]">
-                                    5 ngày
-                                </span>
-                            </div>
-
-                        </div>
-
-                        {/* HÀNG DƯỚI: Chiếm full chiều ngang */}
-                        {/* Element 3: Thành tích hiện tại */}
-                        <div className="bg-[#FAFAED] border border-[#E6DBB3] shadow-sm p-4 flex justify-between items-center transition-all hover:shadow-md">
-                            <div>
-                                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                                    Thành tích hiện tại
-                                </div>
-                                <div className="text-base font-bold text-[#8A6D3B]">
-                                    Top 5% sinh viên tiêu biểu
-                                </div>
-                            </div>
-                            {/* Icon cúp vàng */}
-                            <TrophyOutlined className="text-2xl text-[#8A6D3B]" />
-                        </div>
-
+        <ConfigProvider theme={{ token: { colorPrimary: '#A31D1D' } }}>
+            <div className="max-w-[1400px] mx-auto">
+                {contextHolder}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                    <div>
+                        <h1 className="text-2xl font-black text-gray-900 mb-1">
+                            Chào buổi sáng, {userData?.TenHienThi?.split(' ').pop() || 'bạn'}! 👋
+                        </h1>
+                        <p className="text-gray-500 text-sm">Chào mừng bạn đến với Không gian quản lý nghiên cứu khoa học.</p>
                     </div>
 
-                    <Card
-                        className="shadow-sm "
-                        style={{ border: "1px solid #A31D1D", borderLeft: "4px solid #A31D1D", marginBottom: "35px" }}
+                    {project && project.TrangThai === 'DANGTHUCHIEN' && (
+                        <Button
+                            type="primary"
+                            icon={<UploadOutlined />}
+                            className="font-semibold bg-[#A31D1D] border-none h-10 px-4 rounded-lg shadow-sm hover:scale-105 transition-transform"
+                            onClick={() => {
+                                setNewProgress(progressPercent || 0);
+                                setIsUploadModalVisible(true);
+                            }}
+                        >
+                            Nộp báo cáo định kỳ
+                        </Button>
+                    )}
+                </div>
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div className="xl:col-span-2 space-y-6">
+
+                        <Card style={{ borderTop: "4px solid #A31D1D" }} className="rounded-xl shadow-sm border-gray-200">
+                            <div className="flex justify-between items-start mb-4">
+                                <span className="text-xs font-bold text-red-700 tracking-widest uppercase">Thông tin đề tài</span>
+                                {project && (
+                                    <div className="bg-[#FEE2E2] text-[#A31D1D] font-bold px-3 py-1 rounded-full text-xs flex items-center">
+                                        <SyncOutlined spin={project.TrangThai === 'CHODUYET'} className="mr-1.5" />
+                                        {project.TrangThai_display || project.TrangThai}
+                                    </div>
+                                )}
+                            </div>
+                            {!project ? (
+                                <div className="py-6 my-2 text-center bg-gray-50 rounded-xl border border-dashed border-gray-300 p-6">
+                                    <h3 className="text-lg font-bold text-gray-800 mb-2">Bạn chưa đăng ký đề tài nghiên cứu nào!</h3>
+                                    <p className="text-sm text-gray-500 mb-5 max-w-md mx-auto">Hãy thực hiện đăng ký đề tài nghiên cứu khoa học ngay để bắt đầu tiến trình thực hiện đồ án.</p>
+                                    <Button
+                                        type="primary"
+                                        size="large"
+                                        icon={<FormOutlined />}
+                                        className="bg-[#A31D1D] border-none font-bold rounded-lg shadow-md hover:scale-105 px-6"
+                                        onClick={() => setIsRegisterModalVisible(true)}
+                                    >
+                                        Đăng ký đề tài mới ngay
+                                    </Button>
+                                </div>
+                            ) : (
+                                <>
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-4 leading-snug pr-10">{project.TenDeTai}</h2>
+                                    <div className="flex gap-8 text-sm text-red-800 mb-12 font-medium">
+                                        <span className="flex items-center gap-2"><UserOutlined /> GVHD: {project.gv_huong_dan || 'Chưa phân công'}</span>
+                                        <span className="flex items-center gap-2"><CalendarOutlined /> Bắt đầu: {project.NgayTao ? new Date(project.NgayTao).toLocaleDateString('vi-VN') : 'Vừa xong'}</span>
+                                    </div>
+
+                                    <div>
+                                        <div className="flex justify-between items-end mb-12">
+                                            <span className="text-sm font-bold text-gray-800">Tiến độ thực hiện chung</span>
+                                            <span className="text-[#A31D1D] font-black text-lg">{progressPercent}%</span>
+                                        </div>
+                                        <div className="relative flex items-center justify-between w-full mt-2">
+                                            {/* Dây nền xám */}
+                                            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-gray-200 z-0"></div>
+
+                                            <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-[#A31D1D] z-0 transition-all duration-500" style={{ width: `${getProgressBarWidth()}%` }}></div>
+
+                                            <div className="z-10 flex flex-col items-center">
+                                                <div className="w-6 h-6 rounded flex items-center justify-center mb-2 shadow-sm bg-[#A31D1D]"><CheckOutlined className="text-white text-xs font-bold" /></div>
+                                                <span className="text-[10px] font-semibold text-gray-600">Đăng ký</span>
+                                            </div>
+                                            <div className="z-10 flex flex-col items-center">
+                                                <div className={`w-6 h-6 rounded flex items-center justify-center mb-2 shadow-sm transition-colors ${project.TrangThai !== 'CHODUYET' ? 'bg-[#A31D1D]' : 'bg-gray-100 border-gray-200'}`}>
+                                                    {project.TrangThai !== 'CHODUYET' ? <CheckOutlined className="text-white text-xs font-bold" /> : <LockOutlined className="text-gray-400 text-[10px]" />}
+                                                </div>
+                                                <span className="text-[10px] font-semibold text-gray-400">Duyệt đề cương</span>
+                                            </div>
+                                            <div className="z-10 flex flex-col items-center">
+                                                <div className={`w-6 h-6 rounded flex items-center justify-center mb-2 shadow-sm transition-colors ${progressPercent >= 50 ? 'bg-[#A31D1D]' : (project.TrangThai === 'DANGTHUCHIEN' ? 'bg-white border-2 border-[#A31D1D]' : 'bg-gray-100 border-gray-200')}`}>
+                                                    {progressPercent >= 50 ? <CheckOutlined className="text-white text-xs font-bold" /> : (project.TrangThai === 'DANGTHUCHIEN' ? <SyncOutlined spin className="text-[#A31D1D] text-[10px] font-bold" /> : <LockOutlined className="text-gray-400 text-[10px]" />)}
+                                                </div>
+                                                <span className="text-[10px] font-bold text-gray-400">Báo cáo giữa kỳ</span>
+                                            </div>
+                                            <div className="z-10 flex flex-col items-center">
+                                                <div className={`w-6 h-6 rounded flex items-center justify-center mb-2 shadow-sm transition-colors ${project.TrangThai === 'DANGHIEMTHU' ? 'bg-[#A31D1D]' : 'bg-gray-100 border-gray-200'}`}>
+                                                    {project.TrangThai === 'DANGHIEMTHU' ? <CheckOutlined className="text-white text-xs font-bold" /> : <LockOutlined className="text-gray-400 text-[10px]" />}
+                                                </div>
+                                                <span className="text-[10px] font-medium text-gray-400">Nghiệm thu</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </Card>
+
+                        {project && (
+                            <Card className="rounded-xl shadow-sm relative overflow-hidden" style={{ border: "1px solid #A31D1D4D" }}>
+                                {project.TrangThai === 'CHODUYET' && (
+                                    <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center p-6 text-center">
+                                        <ExclamationCircleOutlined className="text-3xl text-orange-500 mb-2" />
+                                        <h4 className="text-base font-bold text-gray-800">Đề tài đang chờ phê duyệt</h4>
+                                        <p className="text-xs text-gray-500 mt-1">Khi nào giảng viên chấp nhận phê duyệt, hệ thống sẽ mở khóa nộp tài liệu.</p>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between items-center mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-red-50 p-2.5 rounded text-[#A31D1D]"><FileTextOutlined className="text-xl" /></div>
+                                        <div>
+                                            <h3 className="text-lg font-bold text-gray-800">Nộp tài liệu báo cáo</h3>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <Dragger disabled={project.TrangThai === 'CHODUYET'} className="bg-gray-50/50 border-dashed border border-gray-300 rounded-lg p-4">
+                                        <p className="ant-upload-drag-icon text-[#A31D1D] mb-2"><InboxOutlined className="text-3xl" /></p>
+                                        <p className="font-bold text-gray-800 text-sm">Kéo thả tệp hoặc click để chọn</p>
+                                    </Dragger>
+                                    <div className="flex justify-between items-center mt-4">
+                                        <Button className="bg-[#F6F4EB] text-[#7A6A42] font-bold text-xs"><RobotOutlined /> AI Trợ lý Đề tài</Button>
+                                        <Button onClick={() => setIsUploadModalVisible(true)} className="bg-[#A31D1D] text-white font-bold px-8 border-none">NỘP BÀI</Button>
+                                    </div>
+                                </div>
+                            </Card>
+                        )}
+                    </div>
+
+                    <div className="space-y-6">
+                        <div className="flex flex-col gap-4 border border-[#A31D1D]/30 p-6 bg-white rounded-xl">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gray-50 border shadow-sm p-4 flex flex-col items-center">
+                                    <span className="text-xs font-bold text-gray-400 uppercase">Điểm GVHD</span>
+                                    <span className="text-3xl font-black text-[#A31D1D]">
+                                        {progressList.length > 0 && progressList[0].DiemGVHD !== null ? progressList[0].DiemGVHD : '---'}
+                                    </span>
+                                </div>
+                                <div className="bg-[#FFF5F5] border-red-100 shadow-sm p-4 flex flex-col items-center justify-center text-center">
+                                    <span className="text-xs font-bold text-[#A31D1D] uppercase">Trạng thái</span>
+                                    <span className="text-xs font-black text-[#A31D1D] uppercase mt-1">
+                                        {project ? (project.TrangThai_display || project.TrangThai) : 'CHƯA ĐĂNG KÝ'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <Card className="shadow-sm border-[#A31D1D] border-l-4">
+                            <div className="flex items-center gap-2 mb-3 text-[#A31D1D] font-bold text-xs uppercase">
+                                <MessageOutlined /> Nhận xét mới nhất
+                            </div>
+                            {progressList.filter(p => p.NhanXetGVHD).length > 0 ? (
+                                <p className="text-sm text-gray-600 italic whitespace-pre-wrap">
+                                    "{progressList.filter(p => p.NhanXetGVHD)[0].NhanXetGVHD}"
+                                </p>
+                            ) : (
+                                <p className="text-sm text-gray-400 italic mb-4">Chưa có nhận xét nào từ giảng viên.</p>
+                            )}
+                        </Card>
+                    </div>
+                </div>
+                <Modal
+                    title={<span className="font-black text-lg text-[#A31D1D]">Đăng ký Đề tài Nghiên cứu Khoa học</span>}
+                    open={isRegisterModalVisible}
+                    width={800}
+                    onCancel={() => {
+                        setIsRegisterModalVisible(false);
+                        form.resetFields();
+                        setSelectedTeam([]);
+                    }}
+                    footer={null}
+                >
+                    <Form
+                        form={form}
+                        layout="vertical"
+                        onFinish={handleRegisterSubmit}
+                        requiredMark={true}
+                        size="large"
+                        className="mt-4"
                     >
-                        <div className="flex items-center gap-2 mb-3 text-[#A31D1D] font-bold text-xs tracking-wider uppercase">
-                            <MessageOutlined /> Nhận xét mới nhất
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Form.Item
+                                label={<span className="font-bold text-gray-700">Mã đề tài (Dự kiến)</span>}
+                                name="MaDeTai"
+                                rules={[{ required: true, message: 'Vui lòng nhập mã đề tài!' }]}
+                            >
+                                <Input placeholder="VD: DT2026-001" />
+                            </Form.Item>
+
+                            <Form.Item
+                                label={<span className="font-bold text-gray-700">Tên đề tài</span>}
+                                name="TenDeTai"
+                                rules={[{ required: true, message: 'Vui lòng nhập tên đề tài!' }]}
+                            >
+                                <Input placeholder="Nhập tên đề tài nghiên cứu..." />
+                            </Form.Item>
                         </div>
-                        <p className="text-sm text-gray-600 italic leading-relaxed mb-4">
-                            "Nhóm làm biểu đồ Use Case khá tốt, tuy nhiên cần xem lại luồng đăng nhập. Nhớ nộp báo cáo đúng hạn nhé."
-                        </p>
-                        <div className="flex justify-between items-center text-[10px]">
-                            <span className="text-gray-400 font-bold">10/05/2024</span>
-                            <span className="text-[#A31D1D] font-bold cursor-pointer hover:underline">Phản hồi ↵</span>
+
+                        <Form.Item
+                            label={<span className="font-bold text-gray-700">Tóm tắt nội dung</span>}
+                            name="TomTat"
+                            rules={[{ required: true, message: 'Vui lòng nhập tóm tắt đề tài!' }]}
+                        >
+                            <TextArea rows={3} placeholder="Phân tích và thiết kế hệ thống tại Học viện Kỹ thuật Mật mã..." />
+                        </Form.Item>
+
+                        <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                            <label className="block font-bold text-gray-700 mb-2 text-sm">
+                                Thêm thành viên cùng nhóm (Tùy chọn)
+                            </label>
+                            <Select
+                                showSearch
+                                placeholder="Tìm bằng tên hoặc mã sinh viên để mời vào nhóm..."
+                                value={null}
+                                onSelect={handleAddStudent}
+                                options={studentsOptions.filter(opt => !selectedTeam.some(s => s.MaSV === opt.value))}
+                                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                                className="w-full mb-3"
+                            />
+
+                            {selectedTeam.length > 0 && (
+                                <div className="flex flex-col gap-2 mt-2">
+                                    <p className="text-xs font-bold text-gray-500 uppercase">Thành viên đã chọn ({selectedTeam.length}/4)</p>
+                                    {selectedTeam.map(sv => (
+                                        <div key={sv.MaSV} className="flex justify-between items-center bg-white border border-gray-200 px-4 py-2 rounded-md shadow-sm">
+                                            <div className="flex items-center gap-3">
+                                                <Avatar icon={<UserOutlined />} className="bg-[#A31D1D]" />
+                                                <div className="leading-tight">
+                                                    <p className="font-bold text-gray-800 text-sm mb-0.5">{sv.TenSV}</p>
+                                                    <p className="text-xs text-gray-500 font-medium">{sv.MaSV} - Lớp: {sv.Lop}</p>
+                                                </div>
+                                            </div>
+                                            <Button type="text" danger icon={<CloseOutlined />} onClick={() => handleRemoveStudent(sv.MaSV)} />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <Form.Item name="DanhSachThanhVien" hidden><Input /></Form.Item>
                         </div>
-                    </Card>
 
-                    <Card
-                        className="rounded-xl shadow-sm min-h-[550px]"
-                        styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
-                        style={{ border: "1px solid #A31D1D4D" }}
-                    >
-                        <h3 className="text-[10px] font-bold text-gray-500 tracking-wider uppercase mb-5">Thời hạn sắp tới</h3>
+                        <Form.Item
+                            label={<span className="font-bold text-gray-700">Mời Giảng viên Hướng dẫn (Tùy chọn)</span>}
+                            name="MaGV_HuongDan"
+                        >
+                            <Select
+                                allowClear
+                                showSearch
+                                placeholder="Tìm kiếm giảng viên trong khoa..."
+                                options={teachersOptions}
+                                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                            />
+                        </Form.Item>
 
-                        <div className="space-y-4">
-                            <div className="flex gap-3 items-center">
-                                <div className="bg-red-50 p-2.5 rounded text-[#A31D1D]"><FileTextOutlined /></div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-gray-800">Báo cáo sơ đồ UML</h4>
-                                    <p className="text-[10px] text-[#A31D1D] font-bold mt-0.5">Hết hạn trong 5 ngày</p>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 items-center">
-                                <div className="bg-gray-100 p-2.5 rounded text-gray-500"><FormOutlined /></div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-gray-800">Phiếu khảo sát người dùng</h4>
-                                    <p className="text-[10px] text-gray-500 font-medium mt-0.5">Hết hạn trong 14 ngày</p>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 items-center">
-                                <div className="bg-gray-100 p-2.5 rounded text-gray-500"><FileTextOutlined /></div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-gray-800">Bản mô tả thuật toán</h4>
-                                    <p className="text-[10px] text-gray-500 font-medium mt-0.5">Hết hạn trong 22 ngày</p>
-                                </div>
-                            </div>
-                        </div>
-                        <Divider className="my-4" />
-                        <div className="mt-auto pt-6 border-t border-gray-100">
-                            <Button className="w-full text-[#A31D1D] font-bold text-xs border border-[#A31D1D] hover:bg-red-50 rounded">
-                                Xem tất cả lịch hẹn
+                        <div className="flex justify-end gap-3 mt-6 border-t border-gray-100 pt-4">
+                            <Button onClick={() => { setIsRegisterModalVisible(false); form.resetFields(); setSelectedTeam([]); }}>
+                                Hủy bỏ
+                            </Button>
+                            <Button type="primary" htmlType="submit" loading={isRegistering} icon={<SaveOutlined />} className="bg-[#A31D1D] font-bold">
+                                Lưu & Gửi phê duyệt
                             </Button>
                         </div>
-                    </Card>
-                </div>
+                    </Form>
+                </Modal>
+                <Modal
+                    title={<span className="font-black text-lg text-[#A31D1D]">Nộp báo cáo tiến độ</span>}
+                    open={isUploadModalVisible}
+                    onCancel={() => setIsUploadModalVisible(false)}
+                    footer={[
+                        <Button key="cancel" onClick={() => setIsUploadModalVisible(false)}>Hủy</Button>,
+                        <Button key="submit" type="primary" loading={isSubmitting} onClick={handleUploadSubmit} className="bg-[#A31D1D] font-bold border-none">Nộp bài ngay</Button>
+                    ]}
+                >
+                    <div className="py-4 flex flex-col gap-6">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-2 tracking-wide">TỶ LỆ HOÀN THÀNH (%)</label>
+                            <InputNumber min={0} max={100} value={newProgress} onChange={(value) => setNewProgress(value || 0)} className="w-full" size="large" formatter={(value) => `${value}%`} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-2 tracking-wide">FILE BÁO CÁO</label>
+                            <Upload beforeUpload={(file) => { setUploadFile(file); return false; }} maxCount={1} onRemove={() => setUploadFile(null)}>
+                                <Button icon={<UploadOutlined />}>Bấm vào để chọn file</Button>
+                            </Upload>
+                        </div>
+                    </div>
+                </Modal>
             </div>
-        </div >
+        </ConfigProvider>
     );
 }

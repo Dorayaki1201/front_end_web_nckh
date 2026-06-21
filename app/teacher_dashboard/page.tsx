@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Button, Table, Tag, Avatar } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Button, Table, Tag, Avatar, Modal, Input, message, Spin } from 'antd';
 import {
     CheckCircleFilled,
     CalendarOutlined,
@@ -9,282 +9,449 @@ import {
     MessageOutlined,
     EnvironmentOutlined,
     ClockCircleOutlined,
-    UserOutlined
+    UserOutlined,
+    CheckOutlined,
+    CloseOutlined,
+    ExclamationCircleOutlined as WarningIcon
 } from '@ant-design/icons';
+import { sendRequest } from '@/utils/api';
 
 export default function TeacherDashboardPage() {
+    const [loading, setLoading] = useState(true);
+    const [userData, setUserData] = useState<any>(null);
+    const [allTopics, setAllTopics] = useState<any[]>([]);
 
-    // 1. Dữ liệu mảng: Nhóm nghiên cứu
-    const groupData = [
-        {
-            key: '1',
-            id: 'N24-AT16',
-            name: 'Hệ thống phát hiện xâm nhập AI',
-            leader: 'Lê Minh Tuấn',
-            progress: 75,
-            status: 'ĐANG THỰC HIỆN',
-        },
-        {
-            key: '2',
-            id: 'N24-MM02',
-            name: 'Ứng dụng Blockchain trong IoT',
-            leader: 'Nguyễn Thị Mai',
-            progress: 45,
-            status: 'CHỜ BÁO CÁO',
-        },
-    ];
+    // Phân loại data theo trạng thái
+    const [guidedGroups, setGuidedGroups] = useState<any[]>([]);
+    const [pendingTopics, setPendingTopics] = useState<any[]>([]);
 
-    // Cấu hình cột cho bảng Nhóm nghiên cứu
-    const columns = [
-        {
-            title: 'MÃ NHÓM',
-            dataIndex: 'id',
-            key: 'id',
-            render: (text: string) => <span className="font-bold text-gray-800">{text}</span>,
-        },
-        {
-            title: 'TÊN ĐỀ TÀI',
-            dataIndex: 'name',
-            key: 'name',
-            width: '40%',
-            render: (text: string) => <span className="text-gray-600 font-medium">{text}</span>,
-        },
-        {
-            title: 'TRƯỞNG NHÓM',
-            dataIndex: 'leader',
-            key: 'leader',
-            render: (text: string) => (
-                <span className="text-gray-600 text-sm">{text.split('\n').map((line, i) => <div key={i}>{line}</div>)}</span>
-            ),
-        },
-        {
-            title: 'TIẾN ĐỘ',
-            dataIndex: 'progress',
-            key: 'progress',
-            render: (percent: number) => (
-                <div className="flex items-center gap-2">
-                    <div className="w-16 bg-gray-200 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-[#A31D1D] h-full rounded-full" style={{ width: `${percent}%` }}></div>
-                    </div>
-                    <span className="text-xs font-bold text-[#A31D1D]">{percent}%</span>
-                </div>
-            ),
-        },
-        {
-            title: 'TRẠNG THÁI',
-            dataIndex: 'status',
-            key: 'status',
-            render: (status: string) => {
-                const isProcessing = status === 'ĐANG THỰC HIỆN';
-                return (
-                    <Tag className={`font-bold border-none px-2.5 py-1 text-[10px] ${isProcessing ? 'bg-blue-50 text-blue-600' : 'bg-[#FFFBE6] text-[#D48806]'}`}>
-                        {status}
-                    </Tag>
-                );
+    // Quản lý Tab ẩn/hiện bảng: 'guided' (Đang hướng dẫn) hoặc 'pending' (Chờ duyệt)
+    const [activeTab, setActiveTab] = useState<'guided' | 'pending'>('guided');
+
+    // State xử lý Modal Từ chối duyệt
+    const [isRejectModalVisible, setIsRejectModalVisible] = useState(false);
+    const [selectedTopic, setSelectedTopic] = useState<any>(null);
+    const [rejectReason, setRejectReason] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const [messageApi, contextHolder] = message.useMessage();
+
+    // ================= 1. GỌI API LẤY DATA ĐỔ VÀO DASHBOARD =================
+    const fetchDashboardData = async () => {
+        setLoading(true);
+        try {
+            const [userRes, deTaiRes] = await Promise.all([
+                sendRequest<any>({ url: 'http://localhost:8000/api/me/', method: 'GET' }),
+                sendRequest<any>({ url: 'http://localhost:8000/api/de-tai/', method: 'GET' })
+            ]);
+
+            setUserData(userRes);
+
+            // Bốc tách danh sách đề tài từ API
+            const topicsData = deTaiRes.results || deTaiRes || [];
+            setAllTopics(topicsData);
+
+            // Phân loại mảng dữ liệu để ném vào 2 Tab riêng biệt
+            const guided = topicsData.filter((t: any) => t.TrangThai === 'DANGTHUCHIEN' || t.TrangThai === 'CHONGHIEMTHU');
+            const pending = topicsData.filter((t: any) => t.TrangThai === 'CHODUYET_GV');
+
+            setGuidedGroups(guided);
+            setPendingTopics(pending);
+        } catch (error: any) {
+            console.error("Lỗi tải dữ liệu Dashboard:", error);
+            messageApi.error("Không thể kết nối dữ liệu hệ thống.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchDashboardData();
+    }, []);
+
+    // ================= 2. LOGIC HÀNH ĐỘNG: DUYỆT ĐỀ TÀI =================
+    const handleApprove = (record: any) => {
+        Modal.confirm({
+            title: 'Xác nhận phê duyệt đề tài',
+            icon: <WarningIcon className="text-green-500" />,
+            content: `Ní có chắc chắn muốn duyệt đề tài: "${record.TenDeTai}" không?`,
+            okText: 'Xác nhận duyệt',
+            cancelText: 'Hủy bỏ',
+            okButtonProps: { className: 'bg-green-600 border-none' },
+            onOk: async () => {
+                try {
+                    await sendRequest({
+                        url: `http://localhost:8000/api/de-tai/${record.MaDeTai}/`,
+                        method: 'PATCH',
+                        body: { TrangThai: 'DANGTHUCHIEN' }
+                    });
+                    messageApi.success('Đã duyệt đề tài! Hệ thống sẽ cập nhật trạng thái.');
+                    fetchDashboardData(); // Tải lại trang
+                } catch (error: any) {
+                    messageApi.error(error.message || 'Phê duyệt thất bại.');
+                }
+            }
+        });
+    };
+
+    // ================= 3. LOGIC HÀNH ĐỘNG: TỪ CHỐI ĐỀ TÀI =================
+    const handleRejectSubmit = async () => {
+        if (!rejectReason.trim()) {
+            return messageApi.error('Nhập lý do từ chối để sinh viên sửa bài nhé ní!');
+        }
+        setIsSubmitting(true);
+        try {
+            await sendRequest({
+                url: `http://localhost:8000/api/de-tai/${selectedTopic.MaDeTai}/`,
+                method: 'PATCH',
+                body: {
+                    TrangThai: 'TUCHOI',
+                    LyDoTuChoi: rejectReason
+                }
+            });
+            messageApi.success('Đã từ chối phê duyệt đề tài này.');
+            setIsRejectModalVisible(false);
+            setRejectReason('');
+            fetchDashboardData();
+        } catch (error: any) {
+            messageApi.error(error.message || 'Xử lý thất bại.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // ================= 4. CẤU HÌNH CÁC CỘT DỰA THEO TAB HOẠT ĐỘNG =================
+    const getColumns = () => {
+        const baseColumns = [
+            {
+                title: 'MÃ ĐỀ TÀI',
+                dataIndex: 'MaDeTai',
+                key: 'MaDeTai',
+                render: (text: string) => <span className="font-bold text-gray-800">{text}</span>,
             },
-        },
-    ];
+            {
+                title: 'TÊN ĐỀ TÀI',
+                dataIndex: 'TenDeTai',
+                key: 'TenDeTai',
+                width: '40%',
+                render: (text: string) => <span className="text-gray-600 font-medium line-clamp-2 leading-snug">{text}</span>,
+            },
+            {
+                title: 'TRƯỞNG NHÓM / SINH VIÊN',
+                dataIndex: 'sinh_vien_nhom',
+                key: 'sinh_vien_nhom',
+                render: (text: string) => <span className="text-gray-600 text-sm font-medium">{text || 'Sinh viên KMA'}</span>,
+            },
+        ];
+
+        if (activeTab === 'guided') {
+            // Cột dành cho các nhóm đang chạy thực tế
+            return [
+                ...baseColumns,
+                {
+                    title: 'TIẾN ĐỘ',
+                    dataIndex: 'TienDoChung', // Đổi key cho khớp API tiến độ của ní
+                    key: 'TienDoChung',
+                    render: (percent: number) => {
+                        const currentPercent = percent || 0;
+                        return (
+                            <div className="flex items-center gap-2">
+                                <div className="w-16 bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                                    <div className="bg-[#A31D1D] h-full rounded-full" style={{ width: `${currentPercent}%` }}></div>
+                                </div>
+                                <span className="text-xs font-bold text-[#A31D1D]">{currentPercent}%</span>
+                            </div>
+                        );
+                    },
+                },
+                {
+                    title: 'TRẠNG THÁI',
+                    dataIndex: 'TrangThai_display',
+                    key: 'TrangThai_display',
+                    render: (text: string) => (
+                        <Tag className="font-bold border-none px-2.5 py-1 text-[10px] bg-blue-50 text-blue-600 rounded">
+                            {text || 'ĐANG THỰC HIỆN'}
+                        </Tag>
+                    ),
+                },
+            ];
+        } else {
+            // Cột hành động phê duyệt khi thầy mở sang Tab Chờ Duyệt
+            return [
+                ...baseColumns,
+                {
+                    title: 'XỬ LÝ HỒ SƠ',
+                    key: 'action',
+                    align: 'center' as const,
+                    render: (_: any, record: any) => (
+                        <div className="flex gap-2 justify-center">
+                            <Button
+                                type="primary"
+                                size="small"
+                                icon={<CheckOutlined />}
+                                onClick={() => handleApprove(record)}
+                                className="bg-green-600 hover:bg-green-700 border-none text-[11px] font-bold h-7 rounded"
+                            >
+                                Duyệt
+                            </Button>
+                            <Button
+                                type="primary"
+                                danger
+                                size="small"
+                                icon={<CloseOutlined />}
+                                onClick={() => {
+                                    setSelectedTopic(record);
+                                    setIsRejectModalVisible(true);
+                                }}
+                                className="text-[11px] font-bold h-7 rounded"
+                            >
+                                Từ chối
+                            </Button>
+                        </div>
+                    )
+                }
+            ];
+        }
+    };
+
+    // Tính toán tiến độ trung bình cho phần Widget tổng quan
+    const avgProgress = guidedGroups.length > 0
+        ? Math.round(guidedGroups.reduce((acc, cur) => acc + (cur.TienDoChung || 0), 0) / guidedGroups.length)
+        : 0;
 
     return (
         <div className="max-w-[1400px] mx-auto pb-10">
+            {contextHolder}
 
             {/* ================= LỜI CHÀO HEADER ================= */}
             <div className="mb-8 border-b border-gray-200/60 pb-6">
-                <h1 className="text-2xl font-black text-gray-900 mb-2">Chào buổi sáng, A! 👋</h1>
+                <h1 className="text-2xl font-black text-gray-900 mb-2">
+                    Chào buổi sáng, {userData?.TenHienThi || 'Giảng viên'}! 👋
+                </h1>
                 <p className="text-gray-500 text-sm">
-                    Bạn có <span className="font-bold text-gray-700">3</span> hội đồng nghiệm thu trong đợt này. Hãy kiểm tra lịch trình và hồ sơ đề tài.
+                    Bạn đang quản lý hiệu quả hệ thống nghiên cứu khoa học. Hãy rà soát hồ sơ đề tài dưới đây.
                 </p>
             </div>
 
-            {/* ================= KHUNG LƯỚI CHÍNH ================= */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {loading ? (
+                <div className="flex justify-center items-center py-32"><Spin size="large" /></div>
+            ) : (
+                /* ================= KHUNG LƯỚI CHÍNH ================= */
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* ================= CỘT TRÁI (Chiếm 2 phần) ================= */}
-                <div className="lg:col-span-2 flex flex-col gap-6">
+                    {/* ================= CỘT TRÁI ================= */}
+                    <div className="lg:col-span-2 flex flex-col gap-6">
 
-                    {/* 1. THỐNG KÊ TỔNG QUAN */}
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                        <div className="flex justify-between items-center mb-6">
-                            <div>
-                                <h3 className="text-[10px] font-bold text-[#A31D1D] uppercase tracking-wider mb-1">Tổng quan hướng dẫn</h3>
-                                <h2 className="text-lg font-bold text-gray-800">Thống kê & Tiến độ chung</h2>
+                        {/* 1. THỐNG KÊ TỔNG QUAN (Đổ dữ liệu động) */}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h3 className="text-[10px] font-bold text-[#A31D1D] uppercase tracking-wider mb-1">Tổng quan hướng dẫn</h3>
+                                    <h2 className="text-lg font-bold text-gray-800">Thống kê & Tiến độ chung</h2>
+                                </div>
+                                <div className="bg-[#F6FFED] text-[#389E0D] px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5">
+                                    <div className="w-2 h-2 rounded-full bg-[#389E0D]"></div>
+                                    Hệ thống hoạt động tốt
+                                </div>
                             </div>
-                            <div className="bg-[#F6FFED] text-[#389E0D] px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full bg-[#389E0D]"></div>
-                                Đang hoạt động tốt
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                    <p className="text-xs font-medium text-gray-500 mb-2">Đang hướng dẫn</p>
+                                    <p className="text-3xl font-black text-gray-800">{guidedGroups.length}</p>
+                                </div>
+                                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                    <p className="text-xs font-medium text-gray-500 mb-2">Tiến độ trung bình</p>
+                                    <p className="text-3xl font-black text-gray-800">{avgProgress}%</p>
+                                </div>
+                                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                    <p className="text-xs font-medium text-gray-500 mb-2">Yêu cầu chờ xử lý</p>
+                                    <p className="text-3xl font-black text-[#A31D1D]">{pendingTopics.length}</p>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4">
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                                <p className="text-xs font-medium text-gray-500 mb-2">Tổng số nhóm</p>
-                                <p className="text-3xl font-black text-gray-800">12</p>
+                        {/* 2. TAB ĐIỀU HƯỚNG DANH SÁCH NHÓM & PHÊ DUYỆT (ĐÃ ĐẠI TU THEO HƯỚNG 2) */}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                <div className="flex gap-6">
+                                    <button
+                                        onClick={() => setActiveTab('guided')}
+                                        className={`text-sm font-bold pb-1 transition-all border-b-2 ${activeTab === 'guided'
+                                            ? 'text-[#A31D1D] border-[#A31D1D]'
+                                            : 'text-gray-400 border-transparent hover:text-gray-600'
+                                            }`}
+                                    >
+                                        Đang hướng dẫn ({guidedGroups.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('pending')}
+                                        className={`text-sm font-bold pb-1 transition-all border-b-2 flex items-center gap-1.5 ${activeTab === 'pending'
+                                            ? 'text-[#A31D1D] border-[#A31D1D]'
+                                            : 'text-gray-400 border-transparent hover:text-gray-600'
+                                            }`}
+                                    >
+                                        Hồ sơ chờ duyệt
+                                        {pendingTopics.length > 0 && (
+                                            <span className="bg-[#A31D1D] text-white text-[10px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                                                {pendingTopics.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                </div>
+                                <a href="#" className="text-xs font-bold text-[#A31D1D] hover:underline">Xem chi tiết</a>
                             </div>
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                                <p className="text-xs font-medium text-gray-500 mb-2">Tiến độ trung bình</p>
-                                <p className="text-3xl font-black text-gray-800">68%</p>
+
+                            <Table
+                                columns={getColumns()}
+                                dataSource={activeTab === 'guided' ? guidedGroups : pendingTopics}
+                                rowKey="MaDeTai"
+                                pagination={{ pageSize: 5 }}
+                                className="custom-table-header"
+                                locale={{ emptyText: activeTab === 'guided' ? 'Chưa có nhóm nào đăng ký hướng dẫn.' : 'Tuyệt vời! Sạch bóng quân thù, không có đề tài nào cần phê duyệt 🎉' }}
+                            />
+                        </div>
+
+                        {/* 3. PHẢN HỒI MỚI NHẤT TỪ SINH VIÊN */}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                                    <MessageOutlined className="text-[#A31D1D]" /> Phản hồi mới nhất từ sinh viên
+                                </h2>
+                                <a href="#" className="text-xs font-bold text-[#A31D1D] hover:underline">Xem tất cả</a>
                             </div>
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                                <p className="text-xs font-medium text-gray-500 mb-2">Đề tài hoàn thành</p>
-                                <p className="text-3xl font-black text-[#A31D1D]">08</p>
+
+                            <div className="space-y-6">
+                                <div className="flex gap-4">
+                                    <Avatar size={40} icon={<UserOutlined />} className="bg-red-50 text-[#A31D1D]" />
+                                    <div className="flex-1">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <div>
+                                                <span className="font-bold text-gray-800 text-sm mr-2">Nhóm nghiên cứu KMA</span>
+                                            </div>
+                                            <span className="text-[10px] text-gray-400 font-medium">Vừa xong</span>
+                                        </div>
+                                        <p className="text-sm italic text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                            "Hệ thống tự động đồng bộ phản hồi tiến độ nghiên cứu của sinh viên tại đây..."
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+
                     </div>
 
-                    {/* 2. NHÓM NGHIÊN CỨU HIỆN TẠI */}
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                        <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center">
-                            <h2 className="text-base font-bold text-gray-800">Nhóm nghiên cứu hiện tại</h2>
-                            <a href="#" className="text-xs font-bold text-[#A31D1D] hover:underline">Xem tất cả</a>
-                        </div>
-                        <Table
-                            columns={columns}
-                            dataSource={groupData}
-                            pagination={false}
-                            className="custom-table-header"
-                        />
-                    </div>
+                    {/* ================= CỘT PHẢI ================= */}
+                    <div className="lg:col-span-1 flex flex-col gap-6">
 
-                    {/* 3. PHẢN HỒI MỚI NHẤT */}
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-                                <MessageOutlined className="text-[#A31D1D]" /> Phản hồi mới nhất từ sinh viên
+                        {/* 1. LỊCH HỘI ĐỒNG SẮP TỚI */}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                            <h2 className="text-base font-bold text-gray-800 mb-6 flex items-center gap-2">
+                                <CalendarOutlined className="text-[#A31D1D]" /> Lịch hội đồng sắp tới
                             </h2>
-                            <a href="#" className="text-xs font-bold text-[#A31D1D] hover:underline">Xem tất cả</a>
-                        </div>
 
-                        <div className="space-y-6">
-                            {/* Item Phản hồi 1 */}
-                            <div className="flex gap-4">
-                                <Avatar size={40} icon={<UserOutlined />} className="bg-red-50 text-[#A31D1D]" />
-                                <div className="flex-1">
-                                    <div className="flex justify-between items-start mb-1">
-                                        <div>
-                                            <span className="font-bold text-gray-800 text-sm mr-2">Lê Minh Tuấn</span>
-                                            <span className="text-[10px] text-gray-400 font-bold uppercase">(N24-AT16)</span>
+                            <div className="space-y-4 mb-6">
+                                <div className="flex gap-4 items-center border border-gray-100 p-3 rounded-xl hover:border-red-200 transition-colors cursor-pointer">
+                                    <div className="bg-[#A31D1D] text-white rounded-lg w-12 h-12 flex flex-col items-center justify-center shrink-0">
+                                        <span className="text-[9px] font-bold uppercase">TH5</span>
+                                        <span className="text-lg font-black leading-none">22</span>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-gray-800 text-sm mb-1 line-clamp-1">Hội đồng nghiệm thu cấp Khoa</h4>
+                                        <div className="text-[10px] text-gray-500 flex items-center gap-1 mb-0.5">
+                                            <EnvironmentOutlined /> Phòng Hội thảo - Nhà TA
                                         </div>
-                                        <span className="text-[10px] text-gray-400 font-medium">10:45 AM</span>
-                                    </div>
-                                    <p className="text-sm italic text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                        "Thưa Thầy, nhóm em đã bổ sung phần mô phỏng tấn công Dos vào chương 3 như Thầy góp ý. Kính nhờ Thầy xem qua..."
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Item Phản hồi 2 */}
-                            <div className="flex gap-4">
-                                <Avatar size={40} icon={<UserOutlined />} className="bg-red-50 text-[#A31D1D]" />
-                                <div className="flex-1">
-                                    <div className="flex justify-between items-start mb-1">
-                                        <div>
-                                            <span className="font-bold text-gray-800 text-sm mr-2">Nguyễn Thị Mai</span>
-                                            <span className="text-[10px] text-gray-400 font-bold uppercase">(N24-MM02)</span>
+                                        <div className="text-[10px] text-gray-500 flex items-center gap-1">
+                                            <ClockCircleOutlined /> 08:30 - 11:30
                                         </div>
-                                        <span className="text-[10px] text-gray-400 font-medium">Hôm qua</span>
                                     </div>
-                                    <p className="text-sm italic text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                        "Dạ em đã gửi báo cáo tiến độ tuần 4, Thầy kiểm tra giúp em trong Workspace nhé ạ."
-                                    </p>
+                                </div>
+                            </div>
+
+                            <Button className="w-full text-[#A31D1D] font-bold text-xs border border-[#A31D1D] hover:bg-red-50 rounded-lg h-9">
+                                Xem toàn bộ lịch trình
+                            </Button>
+                        </div>
+
+                        {/* 2. ĐỀ TÀI CẦN XỬ LÝ GẤP (Liên kết trực tiếp danh sách Chờ duyệt) */}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                            <h2 className="text-base font-bold text-gray-800 mb-6 flex items-center gap-2">
+                                <ExclamationCircleOutlined className="text-[#A31D1D]" /> Đề tài cần duyệt ngay
+                            </h2>
+
+                            <div className="space-y-4 mb-6">
+                                {pendingTopics.slice(0, 3).map((topic, i) => (
+                                    <div key={topic.MaDeTai || i} className="border border-gray-100 p-3.5 rounded-xl bg-orange-50/30 hover:border-orange-200 transition-colors cursor-pointer" onClick={() => setActiveTab('pending')}>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="font-bold text-gray-800 text-xs truncate max-w-[120px]">Mã: {topic.MaDeTai}</span>
+                                            <span className="bg-[#A31D1D] text-white text-[8px] font-bold px-1.5 py-0.5 rounded">CẦN PHÊ DUYỆT</span>
+                                        </div>
+                                        <p className="text-[11px] font-semibold text-gray-600 line-clamp-2 leading-relaxed">{topic.TenDeTai}</p>
+                                    </div>
+                                ))}
+                                {pendingTopics.length === 0 && (
+                                    <p className="text-xs text-gray-400 italic">Không có hồ sơ khẩn cấp nào.</p>
+                                )}
+                            </div>
+
+                            <div className="text-center">
+                                <button onClick={() => setActiveTab('pending')} className="text-xs font-bold text-[#A31D1D] hover:underline bg-transparent border-none cursor-pointer">
+                                    Xử lý toàn bộ yêu cầu ({pendingTopics.length})
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* 3. HỖ TRỢ KỸ THUẬT */}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                            <h3 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-5">Hỗ trợ kỹ thuật</h3>
+                            <div className="flex flex-col gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="bg-gray-50 p-3 rounded-lg text-gray-500 border border-gray-100">
+                                        <MessageOutlined className="text-lg" />
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-gray-800 text-sm">nckh@actvn.edu.vn</div>
+                                        <div className="text-[10px] text-gray-400 uppercase">Phòng Đào tạo & NCKH</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
+                    </div>
                 </div>
+            )}
 
-                {/* ================= CỘT PHẢI (Chiếm 1 phần) ================= */}
-                <div className="lg:col-span-1 flex flex-col gap-6">
-
-                    {/* 1. LỊCH HỘI ĐỒNG SẮP TỚI */}
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                        <h2 className="text-base font-bold text-gray-800 mb-6 flex items-center gap-2">
-                            <CalendarOutlined className="text-[#A31D1D]" /> Lịch hội đồng sắp tới
-                        </h2>
-
-                        <div className="space-y-4 mb-6">
-                            {/* Lịch 1 */}
-                            <div className="flex gap-4 items-center border border-gray-100 p-3 rounded-xl hover:border-red-200 transition-colors cursor-pointer">
-                                <div className="bg-[#A31D1D] text-white rounded-lg w-12 h-12 flex flex-col items-center justify-center shrink-0">
-                                    <span className="text-[9px] font-bold uppercase">TH5</span>
-                                    <span className="text-lg font-black leading-none">22</span>
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-gray-800 text-sm mb-1 line-clamp-1">Nghiệm thu Đề tài N23-MM12</h4>
-                                    <div className="text-[10px] text-gray-500 flex items-center gap-1 mb-0.5">
-                                        <EnvironmentOutlined /> Phòng 102 - Nhà A1
-                                    </div>
-                                    <div className="text-[10px] text-gray-500 flex items-center gap-1">
-                                        <ClockCircleOutlined /> 08:30 - 11:30
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Lịch 2 */}
-                            <div className="flex gap-4 items-center border border-gray-100 p-3 rounded-xl hover:border-gray-300 transition-colors cursor-pointer">
-                                <div className="bg-gray-100 text-gray-500 rounded-lg w-12 h-12 flex flex-col items-center justify-center shrink-0">
-                                    <span className="text-[9px] font-bold uppercase">TH7</span>
-                                    <span className="text-lg font-black leading-none">24</span>
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-gray-800 text-sm mb-1 line-clamp-1">Bảo vệ Đề cương Nhóm N24-AT</h4>
-                                    <div className="text-[10px] text-gray-500 flex items-center gap-1 mb-0.5">
-                                        <EnvironmentOutlined /> Giảng đường A - Tầng 2
-                                    </div>
-                                    <div className="text-[10px] text-gray-500 flex items-center gap-1">
-                                        <ClockCircleOutlined /> 14:00 - 16:30
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <Button className="w-full text-[#A31D1D] font-bold text-xs border border-[#A31D1D] hover:bg-red-50 rounded-lg h-9">
-                            Xem toàn bộ lịch trình
-                        </Button>
-                    </div>
-
-                    {/* 2. ĐỀ TÀI CẦN XỬ LÝ GẤP */}
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                        <h2 className="text-base font-bold text-gray-800 mb-6 flex items-center gap-2">
-                            <ExclamationCircleOutlined className="text-[#A31D1D]" /> Đề tài cần xử lý gấp
-                        </h2>
-
-                        <div className="space-y-4 mb-6">
-                            {/* Item Gấp 1 */}
-                            <div className="border border-gray-100 p-3.5 rounded-xl">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="font-bold text-gray-800 text-sm">Lê Minh Tuấn</span>
-                                    <span className="bg-[#A31D1D] text-white text-[9px] font-bold px-2 py-0.5 rounded">HẾT HẠN HÔM NAY</span>
-                                </div>
-                                <p className="text-[11px] text-gray-500 line-clamp-1">N24-AT16: Hệ thống phát hiện xâm nhập AI</p>
-                            </div>
-
-                            {/* Item Gấp 2 */}
-                            <div className="border border-gray-100 p-3.5 rounded-xl">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="font-bold text-gray-800 text-sm">Nguyễn Thị Mai</span>
-                                    <span className="bg-red-50 text-[#A31D1D] text-[9px] font-bold px-2 py-0.5 rounded">CÒN 1 NGÀY</span>
-                                </div>
-                                <p className="text-[11px] text-gray-500 line-clamp-1">N24-MM02: Ứng dụng Blockchain trong IoT</p>
-                            </div>
-
-                            {/* Item Gấp 3 */}
-                            <div className="border border-gray-100 p-3.5 rounded-xl">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="font-bold text-gray-800 text-sm">Trần Văn Bình</span>
-                                    <span className="bg-red-50 text-[#A31D1D] text-[9px] font-bold px-2 py-0.5 rounded">CÒN 2 NGÀY</span>
-                                </div>
-                                <p className="text-[11px] text-gray-500 line-clamp-1">N23-MM12: Bảo mật mạng 5G</p>
-                            </div>
-                        </div>
-
-                        <div className="text-center">
-                            <a href="#" className="text-xs font-bold text-[#A31D1D] hover:underline">Xem tất cả yêu cầu</a>
-                        </div>
-                    </div>
-
+            {/* MODAL BẮT NHẬP LÝ DO TỪ CHỐI DUYỆT */}
+            <Modal
+                title={<span className="font-black text-lg text-[#A31D1D]">Lý do từ chối phê duyệt đề tài</span>}
+                open={isRejectModalVisible}
+                onCancel={() => {
+                    setIsRejectModalVisible(false);
+                    setRejectReason('');
+                }}
+                footer={[
+                    <Button key="back" onClick={() => setIsRejectModalVisible(false)}>Hủy bỏ</Button>,
+                    <Button key="submit" type="primary" danger loading={isSubmitting} onClick={handleRejectSubmit} className="font-bold">
+                        Gửi từ chối
+                    </Button>
+                ]}
+            >
+                <div className="py-3">
+                    <p className="text-xs text-gray-500 mb-3 font-medium">
+                        ĐỀ TÀI: <span className="text-gray-800 font-bold">"{selectedTopic?.TenDeTai}"</span>
+                    </p>
+                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
+                        Nội dung góp ý / Lý do từ chối
+                    </label>
+                    <Input.TextArea
+                        rows={4}
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="Ní nhập lý do từ chối cụ thể để nhóm biết đường sửa nhé..."
+                        className="rounded-lg text-sm"
+                    />
                 </div>
-            </div>
+            </Modal>
         </div>
     );
 }

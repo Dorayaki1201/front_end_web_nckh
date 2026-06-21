@@ -130,7 +130,7 @@ export default function StudentProjectsPage() {
                                 type="circle"
                                 percent={project.progress}
                                 strokeColor="#A31D1D"
-                                trailColor="#f0f0f0"
+                                railColor="#f0f0f0"
                                 strokeWidth={8}
                                 width={120}
                                 className="font-black"
@@ -168,7 +168,7 @@ export default function StudentProjectsPage() {
                             items={[
                                 {
                                     color: 'green',
-                                    children: (
+                                    content: (
                                         <div className="pb-4">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <strong className="font-bold text-gray-800 text-sm">Khởi động & Xây dựng Đề cương</strong>
@@ -181,7 +181,7 @@ export default function StudentProjectsPage() {
                                 },
                                 {
                                     color: 'red',
-                                    children: (
+                                    content: (
                                         <div className="pb-4">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <strong className="font-bold text-gray-800 text-sm">Phân tích yêu cầu & Thiết kế sơ đồ Use Case</strong>
@@ -194,7 +194,7 @@ export default function StudentProjectsPage() {
                                 },
                                 {
                                     color: 'gray',
-                                    children: (
+                                    content: (
                                         <div>
                                             <div className="flex items-center gap-2 mb-1">
                                                 <strong className="font-bold text-gray-400 text-sm">Hiện thực hóa giao diện mẫu & Viết báo cáo tổng kết</strong>
